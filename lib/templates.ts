@@ -38,6 +38,12 @@ export async function render_template(fn: string, data): Promise<string> {
     return await njkenv.render(fn, data);
 }
 
+export async function oadr_payload(xml): Promise<string> {
+    return await render_template('oadrPayload.xml', {
+        signed_object: xml
+    });
+}
+
 /**
  * Load the named template using Cheerio to generate a DOM structure
  * supporting jQuery-like API.  The DOM is configured for XML mode.

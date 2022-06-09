@@ -1,6 +1,6 @@
 
 import { ADRConnection } from './oadr.js';
-import { render_template } from './templates.js';
+import { render_template, oadr_payload } from './templates.js';
 import { v4 as uuidv4} from 'uuid';
 
 export type AddReportOptions = {
@@ -70,6 +70,21 @@ export class OpenADRClient {
     ven_id: string;
     vtn_url: string;
 
+    /**
+     * The ID for the VTN received from the registration event.
+     */
+    vtn_id: string;
+
+    /**
+     * The registration ID received from the registration event
+     */
+    vtn_registrationID: string;
+
+    /**
+     * The value for oadrRequestedOadrPollFreq received
+     * from the registration event.
+     */
+    vtn_requested_poll_frequency: string;
 
     /**
      * This boolean element is used to indicate the
@@ -105,7 +120,7 @@ export class OpenADRClient {
             return this.#vtnconnection;
         }
         // TODO must initialize the connection
-        this.#vtnconnection = new ADRConnection();
+        this.#vtnconnection = new ADRConnection(this.vtn_url);
         return this.#vtnconnection;
     }
 
@@ -121,12 +136,13 @@ export class OpenADRClient {
 
     }
 
-    async create_party_registration() {
-
-        const request = await render_template('oadrCreatePartyRegistration.xml', {
+    async create_party_registration(): Promise<void> {
+        const requestID = uuidv4();
+        const request = await oadr_payload(
+            await render_template('oadrCreatePartyRegistration.xml', {
             ven_id: this.ven_id,
             ven_name: this.ven_name,
-            request_id: uuidv4(),
+            request_id: requestID,
             profile_name: (await this.VTNConnection()).oadrProfile,
             transport_name: 'simpleHttp',
             /*
@@ -138,36 +154,42 @@ export class OpenADRClient {
             report_only: this.report_only,
             xml_signature: this.xml_signature,
             http_pull_model: this.pull_mode
-        });
+        }));
 
-        const xml = await render_template('oadrPayload.xml', {
-            signed_object: request
-        });
-        
         const response = await (await this.VTNConnection())
-                        .sendRequest(this.vtn_url, 'EiRegisterParty', xml);
+                        .sendRequest(this.vtn_url,
+                            'EiRegisterParty',
+                            request);
 
-        return response;
+        const oadrCreatedPartyRegistration = (await this.VTNConnection())
+                .responseCreatedPartyRegistration(response);
+
+        if (requestID !== oadrCreatedPartyRegistration.eiResponse.requestID) {
+            throw new Error(`create_party_registration response did not match requestID ${requestID}`);
+        }
 
         /*
-        request_id = utils.generate_id()
-        service = 'EiRegisterParty'
-        payload = {'ven_name': self.ven_name,
-                   'ven_id': self.ven_id,
-                   'http_pull_model': http_pull_model,
-                   'xml_signature': xml_signature,
-                   'report_only': report_only,
-                   'profile_name': profile_name,
-                   'transport_name': transport_name,
-                   'transport_address': transport_address}
+         * {
+         *   oadrCreatedPartyRegistration: {
+         *       eiResponse: {
+         *           responseCode: 200,
+         *           responseDescription: 'OK',
+         *           requestID: '385bd330-2bc2-48ef-90d6-51d050d7492a'
+         *       },
+         *       registrationID: 'reg_id_ven123',
+         *       venID: 'ven_id_ven123',
+         *       vtnID: 'myvtn',
+         *       oadrProfiles: { oadrProfile: [Object] },
+         *       oadrRequestedOadrPollFreq: { duration: 'PT10S' }
+         *   }
+         * }
+         */
+        this.vtn_id = oadrCreatedPartyRegistration.vtnID;
+        this.vtn_registrationID = oadrCreatedPartyRegistration.registrationID;
+        this.vtn_requested_poll_frequency
+                = oadrCreatedPartyRegistration.oadrRequestedOadrPollFreq.duration;
         
-        # logger.debug(f"BEFORE oadrCreatePartyRegistration {request_id}")
-        message = self._create_message('oadrCreatePartyRegistration',
-                                        request_id=request_id,
-                                        **payload)
-        # logger.debug(f"BEFORE _perform_request {request_id} {message}")
-        response_type, response_payload = await self._perform_request(service, message)
-        */
+        console.log(`create_party_registration ${this.ven_id} registered with ${this.vtn_id} registration ID ${this.vtn_registrationID} ${this.vtn_requested_poll_frequency}`);
     }
 
     cancel_party_registration() {

@@ -12,7 +12,8 @@ const convert = d2xml();
 let debug = console.log;
 
 export class ADRConnection {
-    constructor() {
+    constructor(vtn_url: string) {
+        this.vtn_url = vtn_url;
         // TODO initialize using the constructor
         // TODO afterward improve the field implementations
     }
@@ -29,6 +30,54 @@ export class ADRConnection {
     authuser = ''; // this.credentials.authuser || "";
     authpw = ''; // this.credentials.authpw || "";
 
+    vtn_url: string;
+
+    #VTNURL: string;
+
+    VTNURL() {
+        if (this.#VTNURL) return this.#VTNURL;
+
+        if (!(this.vtn_url.indexOf("http://") === 0
+          || this.vtn_url.indexOf("https://") === 0)) {
+            if (this.tlsNode) {
+                this.vtn_url = "https://" + this.vtn_url;
+            } else {
+                this.vtn_url = "http://" + this.vtn_url;
+            }
+        }
+
+        let url_profile = this.oadrProfile == "2.0a" ? "" : `${this.oadrProfile}/`;
+        // const _url = `${url}/OpenADR2/Simple/2.0b/${ei}`;
+        const slash = this.vtn_url.endsWith('/') ? '' : '/'
+        const _url = `${this.vtn_url}${slash}OpenADR2/Simple/${url_profile}`;
+
+        this.#VTNURL = _url;
+        return _url;
+    }
+
+    /*
+     * EI's and Request Types
+     *
+     * EiRegisterParty  -- CreatePartyRegistration 
+     *                  -- QueryRegistration
+     *     RESPONSE     -- CreatedPartyRegistration
+     *                  -- CancelPartyRegistration
+     *     RESPONSE     -- CanceledPartyRegistration
+     *
+     * EiReport         -- RegisterReport
+     *                  -- UpdateReport
+     *     RESPONSE     -- RegisteredReport
+     *
+     * OadrPoll         -- Poll
+     *     RESPONSE     -- Response
+     *
+     * EiOpt            -- CreateOpt
+     *                  -- CancelOpt
+     *
+     * EiEvent          -- RequestEvent
+     *                  -- CreatedEvent
+     */ 
+
 
     /**
      * Send a request
@@ -38,20 +87,10 @@ export class ADRConnection {
      * @param xml The payload to send
      */
     async sendRequest(url: string, ei: string, xml: string) {
-        if (!(url.indexOf("http://") === 0 || url.indexOf("https://") === 0)) {
-            if (this.tlsNode) {
-                url = "https://" + url;
-            } else {
-                url = "http://" + url;
-            }
-        }
-
-        let url_profile = this.oadrProfile == "2.0a" ? "" : `${this.oadrProfile}/`;
-        // const _url = `${url}/OpenADR2/Simple/2.0b/${ei}`;
-        const _url = `${url}/OpenADR2/Simple/${url_profile}${ei}`;
+        const req_url = this.VTNURL() + ei;
 
         const options = {
-            url: _url,
+            url: req_url,
             method: "POST",
             headers: {
                 "content-type": "application/xml", // <--Very important!!!
@@ -75,7 +114,7 @@ export class ADRConnection {
         // options.body = xml;
         options.data = xml;
 
-        console.log(options);
+        console.log(`sendRequest ${req_url}`, options);
         
         // request(options, cb);
         let response;
@@ -96,6 +135,7 @@ export class ADRConnection {
         }
 
         if (response.status >= 200 && response.status < 300) {
+
             return response;
         } else {
             throw new Error(`OADR ERROR ${response.status} ${response.data}`);
@@ -103,12 +143,29 @@ export class ADRConnection {
 
     }
 
+    responseCreatedPartyRegistration(response) {
+        const parser = new XMLParser({
+            removeNSPrefix: true
+        });
+        let jsdata = parser.parse(response.data);
 
-    prepareResMsg(uuid, inCmd, body) {
+        if (!jsdata.oadrPayload) {
+            throw new Error(`Response does not have oadrPayload ${jsdata}`);
+        }
+        if (!jsdata.oadrPayload.oadrSignedObject) {
+            throw new Error(`Response does not have oadrSignedObject ${jsdata}`);
+        }
+        if (!jsdata.oadrPayload.oadrSignedObject.oadrCreatedPartyRegistration) {
+            throw new Error(`Response does not have oadrCreatedPartyRegistration ${jsdata}`);
+        }
+        return jsdata.oadrPayload.oadrSignedObject.oadrCreatedPartyRegistration;
+    }
+
+    prepareResMsg(uuid, requestType, body) {
         const msg = {
             oadr: {
                 requestID: uuid || 'unknown',
-                requestType: undefined,
+                requestType: requestType,
                 responseType: undefined
             },
             payload: {
@@ -130,7 +187,6 @@ export class ADRConnection {
             }
             msg.oadr.responseType = getOadrCommand(msg.payload.data);
         }
-        msg.oadr.requestType = inCmd;
         return msg;
     }
 
