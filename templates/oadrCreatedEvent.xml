@@ -1,0 +1,34 @@
+<oadr:oadrSignedObject xmlns:oadr="http://openadr.org/oadr-2.0b/2012/07" oadr:Id="oadrSignedObject">
+  <oadr:oadrCreatedEvent ei:schemaVersion="2.0b" xmlns:ei="http://docs.oasis-open.org/ns/energyinterop/201110">
+    <eiCreatedEvent xmlns="http://docs.oasis-open.org/ns/energyinterop/201110/payloads">
+      <ei:eiResponse>
+        <ei:responseCode>{{ response.response_code }}</ei:responseCode>
+        <ei:responseDescription>{{ response.response_description }}</ei:responseDescription>
+        {% if (event_responses is not defined or event_responses is none) and (response.request_id is defined and response.request_id is not none) %}
+        <requestID xmlns="http://docs.oasis-open.org/ns/energyinterop/201110/payloads">{{ response.request_id }}</requestID>
+        {% else %}
+        <requestID xmlns="http://docs.oasis-open.org/ns/energyinterop/201110/payloads"></requestID>
+        {% endif %}
+      </ei:eiResponse>
+      {% if event_responses is defined and event_responses is not none %}
+      <ei:eventResponses>
+        {% for event_response in event_responses %}
+        <ei:eventResponse>
+          <ei:responseCode>{{ event_response.response_code }}</ei:responseCode>
+          {% if event_response.response_description is defined and event_response.response_description is not none %}
+          <ei:responseDescription>{{ event_response.response_description }}</ei:responseDescription>
+          {% endif %}
+          <requestID xmlns="http://docs.oasis-open.org/ns/energyinterop/201110/payloads">{{ event_response.request_id }}</requestID>
+          <ei:qualifiedEventID>
+            <ei:eventID>{{ event_response.event_id }}</ei:eventID>
+            <ei:modificationNumber>{{ event_response.modification_number }}</ei:modificationNumber>
+          </ei:qualifiedEventID>
+          <ei:optType>{{ event_response.opt_type }}</ei:optType>
+        </ei:eventResponse>
+        {% endfor %}
+      </ei:eventResponses>
+      {% endif %}
+      <ei:venID>{{ ven_id }}</ei:venID>
+    </eiCreatedEvent>
+  </oadr:oadrCreatedEvent>
+</oadr:oadrSignedObject>

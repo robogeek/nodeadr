@@ -1,0 +1,33 @@
+<ei:eiActivePeriod>
+    <properties xmlns="urn:ietf:params:xml:ns:icalendar-2.0">
+        <dtstart>
+            <date-time>{{ event.active_period.dtstart|datetimeformat }}</date-time>
+        </dtstart>
+        <duration>
+            <duration>{{ event.active_period.duration|timedeltaformat }}</duration>
+        </duration>
+        {% if event.active_period.tolerance %}
+        <tolerance>
+            <tolerate>
+                <startafter>{{ event.active_period.tolerance.startafter|timedeltaformat }}</startafter>
+            </tolerate>
+        </tolerance>
+        {% endif %}
+        {% if event.active_period.notification_period %}
+        <ei:x-eiNotification>
+            <duration>{{ event.active_period.notification_period|timedeltaformat }}</duration>
+        </ei:x-eiNotification>
+        {% endif %}
+        {% if event.active_period.ramp_up_period %}
+        <ei:x-eiRampUp>
+            <duration>{{ event.active_period.ramp_up_period|timedeltaformat }}</duration>
+        </ei:x-eiRampUp>
+        {% endif %}
+        {% if event.active_period.recovery_period %}
+        <ei:x-eiRecovery>
+            <duration>{{ event.active_period.recovery_period|timedeltaformat }}</duration>
+        </ei:x-eiRecovery>
+        {% endif %}
+    </properties>
+    <components xmlns="urn:ietf:params:xml:ns:icalendar-2.0" />
+</ei:eiActivePeriod>

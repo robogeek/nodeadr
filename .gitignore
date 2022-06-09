@@ -102,3 +102,8 @@ dist
 
 # TernJS port file
 .tern-port
+
+# TypeScript compiles to here
+dist
+
+package-lock.json
