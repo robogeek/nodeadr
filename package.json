@@ -20,7 +20,9 @@
     "cheerio": "^1.0.0-rc.11",
     "data2xml": "^1.3.4",
     "fast-xml-parser": "^4.0.8",
+    "iso8601-duration": "^2.1.1",
     "nunjucks": "^3.2.3",
+    "toad-scheduler": "^1.6.1",
     "typescript": "^4.6.4",
     "uuid": "^8.3.2"
   }

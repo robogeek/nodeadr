@@ -2,6 +2,8 @@
 import { ADRConnection } from './oadr.js';
 import { render_template, oadr_payload } from './templates.js';
 import { v4 as uuidv4} from 'uuid';
+import { default as Duration } from "iso8601-duration";
+import { ToadScheduler, SimpleIntervalJob, AsyncTask } from 'toad-scheduler';
 
 export type AddReportOptions = {
     measurement;
@@ -113,6 +115,8 @@ export class OpenADRClient {
     pushurl: string = undefined;
     pushport: number = undefined;
 
+    #scheduler;
+
     #vtnconnection: ADRConnection;
 
     async VTNConnection(): Promise<ADRConnection> {
@@ -122,6 +126,27 @@ export class OpenADRClient {
         // TODO must initialize the connection
         this.#vtnconnection = new ADRConnection(this.vtn_url);
         return this.#vtnconnection;
+    }
+
+    async start() {
+        await this.create_party_registration();
+        if (!this.vtn_requested_poll_frequency) {
+            throw new Error(`start - no polling schedule supplied`);
+        }
+
+        this.#scheduler = new ToadScheduler();
+
+        const pollTask = new AsyncTask('VTN Poll', async (): Promise<void> => {
+            await this.poll();
+        });
+
+        const pollJob = new SimpleIntervalJob(
+                    Duration.parse(this.vtn_requested_poll_frequency),
+                    pollTask,
+                    'id_vtn_poll');
+
+        this.#scheduler.addSimpleIntervalJob(pollJob);
+        console.log(`start`)
     }
 
     add_handler(event: string, callback) {
@@ -157,9 +182,7 @@ export class OpenADRClient {
         }));
 
         const response = await (await this.VTNConnection())
-                        .sendRequest(this.vtn_url,
-                            'EiRegisterParty',
-                            request);
+                        .sendRequest('EiRegisterParty', request);
 
         const oadrCreatedPartyRegistration = (await this.VTNConnection())
                 .responseCreatedPartyRegistration(response);
@@ -189,7 +212,7 @@ export class OpenADRClient {
         this.vtn_requested_poll_frequency
                 = oadrCreatedPartyRegistration.oadrRequestedOadrPollFreq.duration;
         
-        console.log(`create_party_registration ${this.ven_id} registered with ${this.vtn_id} registration ID ${this.vtn_registrationID} ${this.vtn_requested_poll_frequency}`);
+        console.log(`create_party_registration ${this.ven_id} registered with ${this.vtn_id} registration ID ${this.vtn_registrationID} ${this.vtn_requested_poll_frequency}`, Duration.parse(this.vtn_requested_poll_frequency));
     }
 
     cancel_party_registration() {
@@ -228,12 +251,84 @@ export class OpenADRClient {
      * Request the next available message from the Server.
      */
     async poll() {
-        const xml = await render_template('oadrPoll.xml', {
-            ven_id: this.ven_id
-        });
+        const request = await oadr_payload(
+            await render_template('oadrPoll.xml', {
+                ven_id: this.ven_id
+            })
+        );
         
         const response = await (await this.VTNConnection())
-                        .sendRequest(this.vtn_url, 'OadrPoll', xml);
+                        .sendRequest('OadrPoll', request);
+
+        console.log(response.data);
+
+        /*
+         *
+         * {
+         *  '?xml': '',
+         *   oadrPayload: { oadrSignedObject: { oadrResponse: [Object] } }
+         * }
+         * {
+         *   oadrResponse: {
+         *       eiResponse: {
+         *          responseCode: 200,
+         *          responseDescription: 'OK',
+         *          requestID: ''
+         *       },
+         *       venID: 'ven123_id'
+         *    }
+         * }
+         *
+         * According to the spec, section 8.6, the response
+         * object can be any one of the following:
+         *
+         *          oadrResponse
+         *          oadrDistributeEvent
+         *          oadrCreateReport
+         *          oadrRegisterReport
+         *          oadrCancelReport
+         *          oadrUpdateReport
+         *          oadrCancelPartyRegistration
+         *          oadrRequestReregistration
+         *
+         * The object returned will depend on whatever the VTN
+         * has available to send to the VEN.  It will send only
+         * one item at a time.  The VTN is done sending items when
+         * it sends an oadrResponse item.
+         */
+        const pollResponse = await (await this.VTNConnection())
+                                    .responsePoll(response);
+
+        console.log(pollResponse);
+        console.log(typeof pollResponse);
+
+        if (typeof pollResponse['oadrResponse'] !== 'undefined') {
+            console.log(`Poll got oadrResponse -- ALL DONE`);
+            return;
+        } else if (typeof pollResponse['oadrDistributeEvent'] !== 'undefined') {
+            console.log(`Poll got oadrDistributeEvent -- MUST DEVELOP`);
+            return;
+        } else if (typeof pollResponse['oadrCreateReport'] !== 'undefined') {
+            console.log(`Poll got oadrCreateReport -- MUST DEVELOP`);
+            return;
+        } else if (typeof pollResponse['oadrRegisterReport'] !== 'undefined') {
+            console.log(`Poll got oadrRegisterReport -- MUST DEVELOP`);
+            return;
+        } else if (typeof pollResponse['oadrCancelReport'] !== 'undefined') {
+            console.log(`Poll got oadrCancelReport -- MUST DEVELOP`);
+            return;
+        } else if (typeof pollResponse['oadrUpdateReport'] !== 'undefined') {
+            console.log(`Poll got oadrUpdateReport -- MUST DEVELOP`);
+            return;
+        } else if (typeof pollResponse['oadrCancelPartyRegistration'] !== 'undefined') {
+            console.log(`Poll got oadrCancelPartyRegistration -- MUST DEVELOP`);
+            return;
+        } else if (typeof pollResponse['oadrRequestReregistration'] !== 'undefined') {
+            console.log(`Poll got oadrRequestReregistration -- MUST DEVELOP`);
+            return;
+        } else {
+            throw new Error(`Poll received incorrect response ${pollResponse}`);
+        }
 
         // TODO process the response
 

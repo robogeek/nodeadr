@@ -86,7 +86,7 @@ export class ADRConnection {
      * @param ei The service to send to
      * @param xml The payload to send
      */
-    async sendRequest(url: string, ei: string, xml: string) {
+    async sendRequest(ei: string, xml: string) {
         const req_url = this.VTNURL() + ei;
 
         const options = {
@@ -159,6 +159,23 @@ export class ADRConnection {
             throw new Error(`Response does not have oadrCreatedPartyRegistration ${jsdata}`);
         }
         return jsdata.oadrPayload.oadrSignedObject.oadrCreatedPartyRegistration;
+    }
+
+    responsePoll(response) {
+
+        const parser = new XMLParser({
+            removeNSPrefix: true
+        });
+        let jsdata = parser.parse(response.data);
+
+        if (!jsdata.oadrPayload) {
+            throw new Error(`Response does not have oadrPayload ${jsdata}`);
+        }
+        if (!jsdata.oadrPayload.oadrSignedObject) {
+            throw new Error(`Response does not have oadrSignedObject ${jsdata}`);
+        }
+
+        return jsdata.oadrPayload.oadrSignedObject;
     }
 
     prepareResMsg(uuid, requestType, body) {
