@@ -161,6 +161,25 @@ export class ADRConnection {
         return jsdata.oadrPayload.oadrSignedObject.oadrCreatedPartyRegistration;
     }
 
+    reponseRegisterReport(response) {
+
+        const parser = new XMLParser({
+            removeNSPrefix: true
+        });
+        let jsdata = parser.parse(response.data);
+
+        if (!jsdata.oadrPayload) {
+            throw new Error(`Response does not have oadrPayload ${jsdata}`);
+        }
+        if (!jsdata.oadrPayload.oadrSignedObject) {
+            throw new Error(`Response does not have oadrSignedObject ${jsdata}`);
+        }
+        if (!jsdata.oadrPayload.oadrSignedObject.oadrRegisteredReport) {
+            throw new Error(`Response does not have oadrRegisteredReport ${jsdata}`);
+        }
+        return jsdata.oadrPayload.oadrSignedObject.oadrRegisteredReport;
+    }
+
     responsePoll(response) {
 
         const parser = new XMLParser({

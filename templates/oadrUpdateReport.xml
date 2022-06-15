@@ -4,9 +4,9 @@
     {% if reports %}
     {% for report in reports %}
     <oadr:oadrReport xmlns:xcal="urn:ietf:params:xml:ns:icalendar-2.0">
-      {% if report.dtstart is defined and report.dtstart is not none %}
+      {% if report.dtstart %}
       <xcal:dtstart>
-        <xcal:date-time>{{ report.dtstart|datetimeformat }}</xcal:date-time>
+        <xcal:date-time>{{ report.dtstart }}</xcal:date-time>
       </xcal:dtstart>
       {% endif %}
 
@@ -19,16 +19,16 @@
           </xcal:dtstart>
           <oadr:oadrReportPayload>
             <ei:rID>{{ interval.report_payload.r_id }}</ei:rID>
-            {% if interval.report_payload.confidence is defined and interval.report_payload.confidence is not none %}
+            {% if interval.report_payload.confidence %}
             <ei:confidence>{{ interval.report_payload.confidence }}</ei:confidence>
             {% endif %}
-            {% if interval.report_payload.accuracy is defined and interval.report_payload.accuracy is not none %}
+            {% if interval.report_payload.accuracy %}
             <ei:accuracy>{{ interval.report_payload.accuracy }}</ei:accuracy>
             {% endif %}
             <ei:payloadFloat>
               <ei:value>{{ interval.report_payload.value }}</ei:value>
             </ei:payloadFloat>
-            {% if interval.report_payload.data_quality is defined and interval.report_payload.data_quality is not none %}
+            {% if interval.report_payload.data_quality %}
             <oadr:oadrDataQuality>{{ interval.report_payload.data_quality }}</oadr:oadrDataQuality>
             {% endif %}
           </oadr:oadrReportPayload>
@@ -52,7 +52,7 @@
     </oadr:oadrReport>
     {% endfor %}
     {% endif %}
-    {% if ven_id is defined and ven_id is not none %}
+    {% if ven_id %}
     <ei:venID>{{ ven_id }}</ei:venID>
     {% endif %}
   </oadr:oadrUpdateReport>
