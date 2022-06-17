@@ -119,6 +119,7 @@ export class ADRConnection {
         // request(options, cb);
         let response;
         try {
+            // TBD support for HTTPS goes here
             response = await axios(options);
         } catch (error) {
             if (error.response) {
@@ -143,7 +144,42 @@ export class ADRConnection {
 
     }
 
+    /**
+     * Verify that the XML in `response.data` is valid, and
+     * convert that XML into a useful-to-JavaScript object.
+     * 
+     * @param response The response object from a query sent to the VTN
+     * @returns 
+     */
+    parse_message(response) {
+
+        const isvalid = XMLValidator.validate(response.data);
+        if (isvalid !== true) {
+            throw new Error(`CreatedPartyRegistration invalid XML ${isvalid.err.code} ${isvalid.err.msg} @ line ${isvalid.err.line}`);
+        }
+        const parser = new XMLParser({
+            removeNSPrefix: true
+        });
+        let jsdata = parser.parse(response.data);
+
+        if (!jsdata.oadrPayload) {
+            throw new Error(`Response does not have oadrPayload ${jsdata}`);
+        }
+        if (!jsdata.oadrPayload.oadrSignedObject) {
+            throw new Error(`Response does not have oadrSignedObject ${jsdata}`);
+        }
+
+        return {
+            tree: jsdata,
+            payload: jsdata.oadrPayload.oadrSignedObject
+        };
+    }
+
     responseCreatedPartyRegistration(response) {
+        const isvalid = XMLValidator.validate(response.data);
+        if (isvalid !== true) {
+            throw new Error(`CreatedPartyRegistration invalid XML ${isvalid.err.code} ${isvalid.err.msg} @ line ${isvalid.err.line}`);
+        }
         const parser = new XMLParser({
             removeNSPrefix: true
         });
@@ -163,6 +199,10 @@ export class ADRConnection {
 
     reponseRegisterReport(response) {
 
+        const isvalid = XMLValidator.validate(response.data);
+        if (isvalid !== true) {
+            throw new Error(`RegisterReport invalid XML ${isvalid.err.code} ${isvalid.err.msg} @ line ${isvalid.err.line}`);
+        }
         const parser = new XMLParser({
             removeNSPrefix: true
         });
@@ -182,6 +222,10 @@ export class ADRConnection {
 
     responsePoll(response) {
 
+        const isvalid = XMLValidator.validate(response.data);
+        if (isvalid !== true) {
+            throw new Error(`Poll invalid XML ${isvalid.err.code} ${isvalid.err.msg} @ line ${isvalid.err.line}`);
+        }
         const parser = new XMLParser({
             removeNSPrefix: true
         });

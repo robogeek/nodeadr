@@ -7,6 +7,7 @@ import { ToadScheduler, SimpleIntervalJob, AsyncTask } from 'toad-scheduler';
 
 import * as enums from './enums.js';
 import * as types from './types.js';
+import { IsURL, ValidateAccessor } from 'runtime-data-validation';
 
 export type AddReportOptions = {
 
@@ -163,11 +164,22 @@ export class OpenADRClient {
 
         this.#reports = [];
         this.#pending_reports = [];
+
+        this.#handle_event = this.#default_on_event;
     }
 
     ven_name: string;
     ven_id: string;
-    vtn_url: string;
+
+
+    #vtn_url: string;
+
+    /* @ValidateAccessor<string>()
+    @IsURL() */
+    // For some reason this threw an error
+    // that http://vtn:8000 is not a URL?
+    set vtn_url(nu: string) { this.#vtn_url = nu; }
+    get vtn_url() { return this.#vtn_url; }
 
     /**
      * The ID for the VTN received from the registration event.
@@ -217,6 +229,11 @@ export class OpenADRClient {
      * recurring tasks to perform.
      */
     #scheduler;
+
+    /**
+     * Event handler function for events
+     */
+    #handle_event;
 
     /**
      * Contains the connection to the VTN.
@@ -271,13 +288,192 @@ export class OpenADRClient {
 
         this.#scheduler.addSimpleIntervalJob(pollJob);
 
-        await this.register_reports();
+        // await this.register_reports();
 
         console.log(`start`)
     }
 
-    add_handler(event: string, callback) {
+    /**
+     * Cache for storing data about events we're supposed to remember.
+     */
+    #receivedEvents;
 
+    /**
+     * Call this when there is an `on_event` to distribute.
+     * 
+     * For a `oadrDistributeEvent` response to a Poll, the
+     * `poll` method automatically calls `handle_on_event`.
+     * 
+     * For a PUSH mode VEN, the HTTP server must have a route
+     * handler for `oadrDistributeEvent` that ends up calling
+     * this method.
+     * 
+     * The parameter is the `oadrDistributeEvent` portion of
+     * the payload.
+     * 
+     * If the event requires a response, it is required to POST
+     * a `oadrCreatedEvent` message with the correct payload.  This
+     * method automatically handles doing so.
+     * 
+     * Events are automatically stored in an internal array.  If
+     * the DistributedEvent includes an event descriptor where
+     * the `event_status` is `canceled`, then the event data is
+     * removed from that internal array.
+     * 
+     * TODO: No attempt is made to determine whether 
+     * the time period for the event is valid.
+     * 
+     * The payload was determined by studying the `_on_event` method
+     * in OpenLEADER in `client.py`, and comparing with the
+     * corresponding schema declarations.
+     * 
+     * @param oadrDistributeEvent The incoming event(s)
+     */
+    async handle_on_event(oadrDistributeEvent) {
+        if (typeof this.#receivedEvents === 'undefined') {
+            this.#receivedEvents = [];
+        }
+
+        for (const event of oadrDistributeEvent.oadrEvent) {
+            const eventDescriptor = event.eiEvent.eventDescriptor;
+
+            /*
+             * We're supposed to remove memory of the event. 
+             */
+            if (eventDescriptor.event_status === 'canceled') {
+                const newrcvd = [];
+                for (const rcvd of this.#receivedEvents) {
+                    if (rcvd.eiEvent.eventDescriptor.eventID
+                     !== eventDescriptor.eventID) {
+                        newrcvd.push(rcvd);
+                    }
+                }
+                if (newrcvd.length !== this.#receivedEvents.length) {
+                    console.log(`handle_on_event -- Canceled event with ID ${eventDescriptor.eventID}`);
+                }
+                this.#receivedEvents = newrcvd;
+                continue;
+            }
+
+            let opt;
+            let response_code = '200';
+            let response_description = 'OK';
+            try {
+                opt = await this.#handle_event(event);
+            } catch (err) {
+                response_code = '404';
+                response_description = `FAILED ${err.message}`;
+                opt = 'optOut';
+            }
+
+            if (event.oadrResponseRequired !== 'always') continue;
+
+            const payload = {
+                ven_id: this.ven_id,
+                response: {
+                    request_id: oadrDistributeEvent.requestID,
+
+                    /**
+                     * 3 digit response code
+                     */
+                    response_code,
+
+                    /**
+                     * Narrative description of the response
+                     */
+                    response_description,
+                },
+
+                event_responses: [{
+                    response_code,
+                    response_description,
+                    request_id: oadrDistributeEvent.requestID,
+                    event_id: eventDescriptor.eventID,
+                    modification_number: eventDescriptor.modificationNumber.toString(),
+                    opt_type: opt
+                }],
+            };
+
+            /* console.log(`CreatedEvent payload`, payload); */
+
+            const request = await oadr_payload(
+                await render_template('oadrCreatedEvent.xml', payload)
+            );
+
+            const response = await (await this.VTNConnection())
+                .sendRequest('EiEvent', request);
+
+            // console.log(response);
+            // console.log(response.data);
+
+            const created_response = await (await this.VTNConnection())
+                    .parse_message(response);
+            const created_payload = created_response.payload;
+
+            /* console.log(created_payload);
+
+            if (created_payload['oadrResponse']
+             && created_payload['oadrResponse']['eiResponse']) {
+                console.log(created_payload['oadrResponse']['eiResponse']);
+            } */
+
+            if (response_code === '200'
+             && (
+                created_payload['oadrResponse']['eiResponse']['responseCode'] === 200
+             || created_payload['oadrResponse']['eiResponse']['responseCode'] === '200'
+             )) {
+                console.log(`handle_on_event received event ${eventDescriptor.eventID}`);
+                this.#receivedEvents.push(event);
+            } else {
+                console.log(`handle_on_event -- error receiving CreatedEvent response for event ${eventDescriptor.eventID} -- code ${created_payload['oadrResponse']['eiResponse']['responseCode']} ${created_payload['oadrResponse']['eiResponse']['responseDescription']}`);
+            }
+        }
+
+    }
+
+    /**
+     * Register a new handler for events sent from the VTN
+     * using the `oadrDistributeEvent` command.  There is
+     * a default handler that simply prints the message.
+     * 
+     * VEN's that need to handle events use this method
+     * to register a function which is invoked.
+     * 
+     * The function will be called with the `oadrEvent` object.
+     * The handler is to return either `optIn` (to agree
+     * to handle the event) or `optOut`, as is required
+     * by the OpenADR protocol.
+     * 
+     * @param callback 
+     */
+    on_event(callback) {
+        this.#handle_event = callback;
+    }
+
+    /**
+     * Default handler for VTN->VEN events.  This handler does
+     * not do anything useful, and should be overridden.
+     * 
+     * @param oadrEvent 
+     * @returns 
+     */
+    #default_on_event(oadrEvent) {
+        console.log(`default_on_event `, oadrEvent);
+        return 'optIn';
+    }
+
+    /**
+     * Call this when there is an `on_update_event` to distribute.  This will
+     * occur either  ??? OpenLEADR has this defined as a possible 
+     * event, but it seems the VTN side doesn't create it, and
+     * there isn't any discussion in the OpenADR spec.
+     * 
+     * when the response to Poll includes `oadrDistributeEvent`,
+     * or when the VTN directly pushes `oadrDistributeEvent`.
+     */
+    handle_on_update_event() {
+        throw new Error(`Do not know what handle_on_update_event should do`);
+        // this.#handlers.emit('on_update_event') // TBD add arguments
     }
 
     /**
@@ -628,7 +824,8 @@ export class OpenADRClient {
             console.log(`Poll got oadrResponse -- ALL DONE`);
             return;
         } else if (typeof pollResponse['oadrDistributeEvent'] !== 'undefined') {
-            console.log(`Poll got oadrDistributeEvent -- MUST DEVELOP`);
+            this.handle_on_event(pollResponse.oadrDistributeEvent);
+            // console.log(`Poll got oadrDistributeEvent -- MUST DEVELOP`);
             return;
         } else if (typeof pollResponse['oadrCreateReport'] !== 'undefined') {
             console.log(`Poll got oadrCreateReport -- MUST DEVELOP`);
@@ -659,4 +856,5 @@ export class OpenADRClient {
         response_type, response_payload = await self._perform_request(service, message)
         return response_type, response_payload */
     }
+
 }

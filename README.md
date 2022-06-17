@@ -9,10 +9,10 @@ At the moment it implements a small subset of OpenADR 2.0b:
 * The `start` method sets up a job scheduler, which is meant to be the means for scheduling report execution.
 * The `start` method initializes a Poll job, to send _OadrPoll_ requests to the VTN.
 * The `poll` method has the initial bones of dispatching Poll responses to handler functions.
+* _DistributeEvent_ messages are handled in `handle_on_event`.  A VEN sets up a handler for this using `on_event`. 
 
 This means it does not:
 
-* Listen to Event's from the VTN
 * Register reports with the VTN
 * Handle other Registration tasks
 * Support canceling Registration or Report operations
@@ -37,6 +37,11 @@ const VEN_ID   = process.env['VEN_ID'];
 const VTN_URL  = process.env['VTN_URL'];
 
 const ven = new VEN.OpenADRClient(VEN_NAME, VEN_ID, VTN_URL);
+
+ven.on_event(event => {
+    console.log(`on_event `, event);
+    return 'optIn';
+});
 
 await ven.start()
 ```
